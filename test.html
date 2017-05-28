@@ -1,0 +1,226 @@
+<html>
+	<head>
+		<title>Test</title>
+		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+		<script type="text/javascript" src="webgl-utils.js"></script>
+
+		<script id="shader-fs" type="x-shader/x-fragment">
+precision mediump float;
+
+const int maxitr = 100;
+
+varying vec2 pos;
+
+uniform float time;
+
+vec3 gradient1(float t){
+	vec4 v[4];
+	v[0] = vec4(0.0);
+	v[1] = vec4(1.0,0.3,0.0,0.5);
+	v[2] = vec4(1.0,0.9,0.1,0.8);
+	v[3] = vec4(1.0,1.0,1.0,1.0);
+
+	if(t > v[0]
+}
+
+float distanceToLine(vec2 p, vec2 a, vec2 s){
+	vec2 t = p - a;
+	return abs(t.x*s.y - t.y*s.x)/length(s);
+}
+
+void main(void){
+	float t = time * .25;
+	vec2 c = vec2(cos(t),sin(t))*sin(t*.21);
+
+	vec2 a = vec2(c.x, -c.y)*.2;
+	vec2 s = vec2(-a.y,a.x);
+	float mindist = 20.0;
+
+	vec2 z = pos*1.5;
+	vec2 z2 = vec2(z.x*z.x,z.y*z.y);
+
+	float dist;
+	int itr = maxitr;
+
+	for(int i=0;i < maxitr;i++){
+		if(z2.x + z2.y > 16384.){
+			itr = i;
+			break;
+		}
+
+		z.y = 2.0*z.x*z.y + c.y;
+		z.x = z2.x - z2.y + c.x;
+		z2 = vec2(z.x*z.x, z.y*z.y);
+
+		dist = distanceToLine(z,a,s);
+		if(dist < mindist){ mindist = dist; }
+	}
+
+	if(itr<maxitr){
+		z2.y = (log(log(z2.x + z2.y)) - 2.0 - log(2.0))/log(2.0);
+	} else {
+		z2.y = 0.0;
+		itr = 0;
+	}
+
+	vec3 col = vec3(0.0);
+	col.r = (float(itr) + 1.0 - z2.y)/float(maxitr);
+	col.r = pow(col.r, 0.7);
+
+	col.g = max(0.0,.9 - pow(mindist, .2));
+
+	gl_FragColor = vec4(col,1.0);
+}
+		</script>
+
+		<script id="shader-vs" type="x-shader/x-vertex">
+attribute vec2 aVertexPosition;
+
+uniform vec2 resolution;
+
+varying vec2 pos;
+
+
+void main(void){
+	gl_Position = vec4(aVertexPosition,0.0,1.0);
+	pos = vec2(aVertexPosition.x * resolution.x/resolution.y, aVertexPosition.y);
+}
+		</script>
+
+		<script type="text/javascript">
+var gl;
+var startTime;
+function initGL(canvas){
+	gl = WebGLUtils.setupWebGL(canvas);
+	if(!gl){
+		alert("Could not initialize WebGL.");
+		return;
+	}
+	gl.viewportWidth = canvas.width;
+	gl.viewportHeight = canvas.height;
+}
+
+
+
+function getShader(id){
+	var shaderScript = document.getElementById(id);
+	if (!shaderScript){
+		alert("Shaders could not be found");
+		return null;
+	}
+
+	var str = "";
+	var k = shaderScript.firstChild;
+	while(k){
+		if (k.nodeType == 3) {
+			str += k.textContent;
+		}
+		k = k.nextSibling;
+	}
+
+	var shader;
+	if(shaderScript.type == "x-shader/x-fragment"){
+		shader = gl.createShader(gl.FRAGMENT_SHADER);
+	} else if (shaderScript.type == "x-shader/x-vertex"){
+		shader = gl.createShader(gl.VERTEX_SHADER);
+	} else {
+		return null;
+	}
+
+	gl.shaderSource(shader, str);
+	gl.compileShader(shader);
+
+	if(!gl.getShaderParameter(shader, gl.COMPILE_STATUS)){
+		alert(id + gl.getShaderInfoLog(shader));
+		return null;
+	}
+
+	return shader;
+}
+
+
+var shaderProgram;
+function initShaders(){
+	var fragmentShader = getShader("shader-fs");
+	var vertexShader = getShader("shader-vs");
+
+	shaderProgram = gl.createProgram();
+	gl.attachShader(shaderProgram, vertexShader);
+	gl.attachShader(shaderProgram, fragmentShader);
+	gl.linkProgram(shaderProgram);
+
+	if(!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)){
+		alert("Error initializing shaders");
+	}
+
+	gl.useProgram(shaderProgram);
+
+	shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+	gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+
+	shaderProgram.timeUniform = gl.getUniformLocation(shaderProgram, "time");
+	shaderProgram.resolutionUniform = gl.getUniformLocation(shaderProgram, "resolution");
+
+}
+
+
+var vertexPositionBuffer;
+
+function initBuffers() {
+	vertexPositionBuffer=gl.createBuffer();
+	gl.bindBuffer(gl.ARRAY_BUFFER, vertexPositionBuffer);
+
+	var vertices = [
+		-1.0,-1.0,
+		-1.0, 1.0,
+		 1.0,-1.0,
+		 1.0, 1.0
+	];
+
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+	vertexPositionBuffer.itemSize = 2;
+	vertexPositionBuffer.numItems = 4;
+}
+
+function drawScene(){
+	gl.viewport(0,0,gl.viewportWidth, gl.viewportHeight);
+	gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+	gl.bindBuffer(gl.ARRAY_BUFFER, vertexPositionBuffer);
+	gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, vertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+	var time = (Date.now() - startTime) / 1000.0;
+	gl.uniform1f(shaderProgram.timeUniform, time);
+
+	gl.uniform2f(shaderProgram.resolutionUniform, gl.viewportWidth, gl.viewportHeight);
+	
+
+	gl.drawArrays(gl.TRIANGLE_STRIP, 0, vertexPositionBuffer.numItems);
+}
+
+function render(){
+	requestAnimFrame(render);
+	drawScene();
+}
+
+function webGLStart(){
+	var canvas = document.getElementById("julcanvas");
+	canvas.setAttribute("width", window.innerWidth);
+	canvas.setAttribute("height", window.innerHeight);
+	initGL(canvas);
+	initBuffers();
+	initShaders();
+
+	gl.clearColor(0.0,0.0,0.0,1.0);
+
+	startTime = Date.now() + Math.random() * 3600000;
+
+	render();
+}
+		</script>
+	</head>
+
+	<body style="margin: 0; padding: 0; border: 0;" onload="webGLStart();">
+		<canvas id="julcanvas"></canvas>
+	</body>
+</html>
